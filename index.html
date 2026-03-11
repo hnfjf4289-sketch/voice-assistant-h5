@@ -44,14 +44,9 @@
             color: #666;
             font-size: 14px;
         }
-        .status.listening {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-        .status.speaking {
-            background: #e3f2fd;
-            color: #1976d2;
-        }
+        .status.listening { background: #e8f5e9; color: #2e7d32; }
+        .status.speaking { background: #e3f2fd; color: #1976d2; }
+        .status.error { background: #ffebee; color: #c62828; }
         .record-btn {
             width: 100%;
             padding: 20px;
@@ -68,9 +63,7 @@
             transform: translateY(-2px);
             box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
         }
-        .record-btn:active {
-            transform: translateY(0);
-        }
+        .record-btn:active { transform: translateY(0); }
         .record-btn.recording {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
             animation: pulse 1s infinite;
@@ -85,6 +78,7 @@
             padding: 15px;
             min-height: 80px;
             margin-bottom: 20px;
+            display: none;
         }
         .result h3 {
             font-size: 14px;
@@ -107,14 +101,25 @@
             cursor: pointer;
             display: none;
         }
-        .play-btn:hover {
-            background: #218838;
-        }
+        .play-btn:hover { background: #218838; }
         .footer {
             text-align: center;
             margin-top: 20px;
             color: #999;
             font-size: 12px;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -129,7 +134,7 @@
             🎤 按住说话
         </button>
         
-        <div class="result" id="result" style="display: none;">
+        <div class="result" id="result">
             <h3>识别结果：</h3>
             <div class="result-text" id="resultText"></div>
         </div>
@@ -139,7 +144,7 @@
         </button>
         
         <div class="footer">
-            Powered by OpenClaw
+            Powered by OpenClaw | 羊羊制作
         </div>
     </div>
 
@@ -153,10 +158,15 @@
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
+        let currentAudioUrl = null;
+        
+        // API 配置 - 需要替换成实际的 API 端点
+        const API_BASE_URL = 'http://localhost:19000'; // OpenClaw Gateway 地址
         
         // 检查浏览器支持
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             status.textContent = '❌ 您的浏览器不支持录音功能';
+            status.className = 'status error';
             recordBtn.disabled = true;
         }
         
@@ -186,7 +196,7 @@
                     audioChunks.push(event.data);
                 };
                 
-                mediaRecorder.onstop = sendAudio;
+                mediaRecorder.onstop = processAudio;
                 
                 mediaRecorder.start();
                 isRecording = true;
@@ -200,6 +210,7 @@
                 
             } catch (err) {
                 status.textContent = '❌ 无法访问麦克风：' + err.message;
+                status.className = 'status error';
             }
         }
         
@@ -216,50 +227,79 @@
             status.className = 'status';
         }
         
-        async function sendAudio() {
+        async function processAudio() {
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             
-            status.textContent = '🔄 正在识别语音...';
+            status.innerHTML = '<span class="loading"></span> 正在识别语音...';
             
-            // 这里调用后端 API（需要替换成实际的 API 地址）
-            // 示例：调用 Whisper API 转文字
             try {
-                // TODO: 替换成实际的 API 端点
+                // 调用后端 API 处理语音
                 const formData = new FormData();
                 formData.append('audio', audioBlob, 'recording.webm');
                 
-                // 模拟 API 调用（实际使用时替换）
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                // 发送到 OpenClaw Gateway
+                const response = await fetch(`${API_BASE_URL}/agent/voice`, {
+                    method: 'POST',
+                    body: formData
+                });
                 
-                // 模拟返回结果
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // 显示识别结果
+                resultText.textContent = data.text || '识别成功';
+                result.style.display = 'block';
+                status.textContent = '✅ 识别成功';
+                status.className = 'status';
+                
+                // 如果有音频回复
+                if (data.audio_url) {
+                    currentAudioUrl = data.audio_url;
+                    playBtn.style.display = 'block';
+                    playBtn.textContent = '🔊 播放回复';
+                    playBtn.onclick = playReply;
+                }
+                
+            } catch (err) {
+                console.error('Error:', err);
+                
+                // 模拟响应（用于测试）
                 const mockResponse = {
-                    text: '这是模拟的语音识别结果，实际使用时请连接后端 API',
-                    reply: '阳阳你好！我是羊羊，我已经收到你的语音消息啦！',
-                    audio_url: '' // TTS 生成的音频 URL
+                    text: '阳阳你好！我是羊羊，我已经收到你的语音消息啦！现在我还在测试阶段，等后端 API 配置好后就能真正对话了！',
+                    audio_url: null
                 };
                 
                 resultText.textContent = mockResponse.text;
                 result.style.display = 'block';
-                status.textContent = '✅ 识别成功';
-                
-                // 如果有音频回复，显示播放按钮
-                if (mockResponse.audio_url) {
-                    playBtn.style.display = 'block';
-                    playBtn.onclick = () => {
-                        const audio = new Audio(mockResponse.audio_url);
-                        audio.play();
-                        status.textContent = '🔊 正在播放回复...';
-                        status.className = 'status speaking';
-                        audio.onended = () => {
-                            status.textContent = '点击按钮继续说话';
-                            status.className = 'status';
-                        };
-                    };
-                }
-                
-            } catch (err) {
-                status.textContent = '❌ 处理失败：' + err.message;
+                status.textContent = '⚠️ 演示模式 - 后端 API 未连接';
+                status.className = 'status';
             }
+        }
+        
+        function playReply() {
+            if (!currentAudioUrl) return;
+            
+            const audio = new Audio(currentAudioUrl);
+            audio.play();
+            
+            status.textContent = '🔊 正在播放回复...';
+            status.className = 'status speaking';
+            playBtn.disabled = true;
+            
+            audio.onended = () => {
+                status.textContent = '点击按钮继续说话';
+                status.className = 'status';
+                playBtn.disabled = false;
+            };
+            
+            audio.onerror = () => {
+                status.textContent = '❌ 播放失败';
+                status.className = 'status error';
+                playBtn.disabled = false;
+            };
         }
         
         // 页面可见性变化时清理
