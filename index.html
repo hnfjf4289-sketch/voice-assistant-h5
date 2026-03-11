@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>羊羊语音助手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .status {
+            background: #f0f0f0;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+        .status.listening {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .status.speaking {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        .record-btn {
+            width: 100%;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-bottom: 20px;
+        }
+        .record-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        .record-btn:active {
+            transform: translateY(0);
+        }
+        .record-btn.recording {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .result {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            min-height: 80px;
+            margin-bottom: 20px;
+        }
+        .result h3 {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .result-text {
+            font-size: 16px;
+            color: #333;
+            line-height: 1.5;
+        }
+        .play-btn {
+            width: 100%;
+            padding: 15px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            display: none;
+        }
+        .play-btn:hover {
+            background: #218838;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #999;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐑 羊羊语音助手</h1>
+        <p class="subtitle">按住说话，松开发送</p>
+        
+        <div class="status" id="status">点击按钮开始说话</div>
+        
+        <button class="record-btn" id="recordBtn">
+            🎤 按住说话
+        </button>
+        
+        <div class="result" id="result" style="display: none;">
+            <h3>识别结果：</h3>
+            <div class="result-text" id="resultText"></div>
+        </div>
+        
+        <button class="play-btn" id="playBtn">
+            🔊 播放回复
+        </button>
+        
+        <div class="footer">
+            Powered by OpenClaw
+        </div>
+    </div>
+
+    <script>
+        const recordBtn = document.getElementById('recordBtn');
+        const playBtn = document.getElementById('playBtn');
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        const resultText = document.getElementById('resultText');
+        
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        
+        // 检查浏览器支持
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            status.textContent = '❌ 您的浏览器不支持录音功能';
+            recordBtn.disabled = true;
+        }
+        
+        recordBtn.addEventListener('mousedown', startRecording);
+        recordBtn.addEventListener('mouseup', stopRecording);
+        recordBtn.addEventListener('mouseleave', stopRecording);
+        
+        // 移动端触摸支持
+        recordBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startRecording();
+        });
+        recordBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            stopRecording();
+        });
+        
+        async function startRecording() {
+            if (isRecording) return;
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = sendAudio;
+                
+                mediaRecorder.start();
+                isRecording = true;
+                
+                recordBtn.textContent = '🔴 录音中... 松开结束';
+                recordBtn.classList.add('recording');
+                status.textContent = '正在录音...';
+                status.className = 'status listening';
+                result.style.display = 'none';
+                playBtn.style.display = 'none';
+                
+            } catch (err) {
+                status.textContent = '❌ 无法访问麦克风：' + err.message;
+            }
+        }
+        
+        function stopRecording() {
+            if (!isRecording || !mediaRecorder) return;
+            
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            isRecording = false;
+            
+            recordBtn.textContent = '🎤 按住说话';
+            recordBtn.classList.remove('recording');
+            status.textContent = '正在处理...';
+            status.className = 'status';
+        }
+        
+        async function sendAudio() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            
+            status.textContent = '🔄 正在识别语音...';
+            
+            // 这里调用后端 API（需要替换成实际的 API 地址）
+            // 示例：调用 Whisper API 转文字
+            try {
+                // TODO: 替换成实际的 API 端点
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+                
+                // 模拟 API 调用（实际使用时替换）
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                // 模拟返回结果
+                const mockResponse = {
+                    text: '这是模拟的语音识别结果，实际使用时请连接后端 API',
+                    reply: '阳阳你好！我是羊羊，我已经收到你的语音消息啦！',
+                    audio_url: '' // TTS 生成的音频 URL
+                };
+                
+                resultText.textContent = mockResponse.text;
+                result.style.display = 'block';
+                status.textContent = '✅ 识别成功';
+                
+                // 如果有音频回复，显示播放按钮
+                if (mockResponse.audio_url) {
+                    playBtn.style.display = 'block';
+                    playBtn.onclick = () => {
+                        const audio = new Audio(mockResponse.audio_url);
+                        audio.play();
+                        status.textContent = '🔊 正在播放回复...';
+                        status.className = 'status speaking';
+                        audio.onended = () => {
+                            status.textContent = '点击按钮继续说话';
+                            status.className = 'status';
+                        };
+                    };
+                }
+                
+            } catch (err) {
+                status.textContent = '❌ 处理失败：' + err.message;
+            }
+        }
+        
+        // 页面可见性变化时清理
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isRecording) {
+                stopRecording();
+            }
+        });
+    </script>
+</body>
+</html>
